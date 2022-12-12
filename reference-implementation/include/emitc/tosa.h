@@ -475,6 +475,33 @@ Dest fully_connected(Src input, Weights weights, Bias bias) {
   return output;
 }
 
+// GatherOp
+template <typename Dest, typename Src, typename Idx,
+          IsTensorOfDim<3, Dest> = true, IsTensorOfDim<3, Src> = true,
+          IsTensorOfDim<2, Idx> = true, IsTensorOfType<Idx, int32_t> = true>
+Dest gather(Src input, Idx indices) {
+  Dest result;
+  static_assert(input.dim(0) == result.dim(0),
+                "Input and output batch dimension do not match.");
+  static_assert(input.dim(0) == indices.dim(0),
+                "Input and weight batch dimension do not match.");
+  static_assert(input.dim(2) == result.dim(2),
+                "Input and output channel dimension do not match.");
+  static_assert(indices.dim(1) == result.dim(1),
+                "Weight and output index dimension do not match.");
+
+  auto it = result.begin();
+  size_t d0offset = Src::dim(1) * Src::dim(2);
+  for (int64_t i = 0; i < Idx::size(); i++) {
+    auto d0 = d0offset * (i / Idx::dim(1));
+    auto d1 = Src::dim(2) * indices[i];
+    auto start = input.begin() + d0 + d1;
+    auto end = start + Src::dim(2);
+    it = std::copy(start, end, it);
+  }
+  return result;
+}
+
 // MatMulOp
 template <typename T, size_t B, size_t M, size_t K, size_t N>
 Tensor3D<T, B, M, N> matmul(Tensor3D<T, B, M, K> a, Tensor3D<T, B, K, N> b) {

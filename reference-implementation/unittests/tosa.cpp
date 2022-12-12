@@ -688,6 +688,29 @@ TEST(tosa, fully_connected) {
   EXPECT_THAT(result, Pointwise(FloatNear(EPSILON), expected_result));
 }
 
+TEST(tosa, gather) {
+  {
+  using InputType = Tensor3D<float, 1, 2, 2>; // N K C
+  using IndexType = Tensor2D<int32_t, 1, 2>; // N W
+  using ResultType = Tensor3D<float, 1, 2, 2>; // N W C
+  InputType input{1, 2, 3, 4};
+  IndexType indices{1, 0};
+  ResultType expected_result{3, 4, 1, 2};
+  ResultType result = tosa::gather<ResultType>(input, indices);
+  EXPECT_THAT(result, Pointwise(FloatNear(EPSILON), expected_result));
+  }
+  {
+  using InputType = Tensor3D<float, 2, 4, 2>; // N K C
+  using IndexType = Tensor2D<int32_t, 2, 3>; // N W
+  using ResultType = Tensor3D<float, 2, 3, 2>; // N W C
+  InputType input{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+  IndexType indices{0, 1, 2, 3, 0, 1};
+  ResultType expected_result{1, 2, 3, 4, 5, 6, 15, 16, 9, 10, 11, 12};
+  ResultType result = tosa::gather<ResultType>(input, indices);
+  EXPECT_THAT(result, Pointwise(FloatNear(EPSILON), expected_result));
+  }
+}
+
 TEST(tosa, matmul) {
   {
     using AType = Tensor3D<float, 1, 3, 1>; // M K

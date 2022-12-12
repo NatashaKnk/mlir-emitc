@@ -243,6 +243,12 @@ func.func @test_fully_connected(%arg0: tensor<14x19xf32>, %arg1: tensor<19x28xf3
   return %0 : tensor<14x28xf32>
 }
 
+func.func @test_gather(%arg0: tensor<3x4x5xf32>, %arg1: tensor<3x6xi32>) -> tensor<3x6x5xf32> {
+  // CHECK: emitc.call "emitc::tosa::gather"(%arg0, %arg1) {template_args = [tensor<3x6x5xf32>]} : (tensor<3x4x5xf32>, tensor<3x6xi32>) -> tensor<3x6x5xf32>
+  %0 = "tosa.gather"(%arg0, %arg1) : (tensor<3x4x5xf32>, tensor<3x6xi32>) -> tensor<3x6x5xf32>
+  return %0 : tensor<3x6x5xf32>
+}
+
 func.func @test_matmul(%arg0: tensor<1x14x19xf32>, %arg1: tensor<1x19x28xf32>) -> tensor<1x14x28xf32> {
   // CHECK: emitc.call "emitc::tosa::matmul"(%arg0, %arg1) : (tensor<1x14x19xf32>, tensor<1x19x28xf32>) -> tensor<1x14x28xf32>
   %0 = "tosa.matmul"(%arg0, %arg1) : (tensor<1x14x19xf32>, tensor<1x19x28xf32>) -> tensor<1x14x28xf32>

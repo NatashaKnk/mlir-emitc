@@ -472,6 +472,34 @@ createBroadcastOpIfNeeded(SrcOp &srcOp, Adaptor adaptor,
   return broadcastedOperands;
 }
 
+/// Convert `tosa.gather` into an `emitc.call` operation.
+class GatherOpConversion : public OpConversionPattern<tosa::GatherOp> {
+  using OpConversionPattern<tosa::GatherOp>::OpConversionPattern;
+
+public:
+  GatherOpConversion(MLIRContext *ctx)
+      : OpConversionPattern<tosa::GatherOp>(ctx) {}
+
+private:
+  LogicalResult
+  matchAndRewrite(tosa::GatherOp gatherOp, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    StringRef funcName = "emitc::tosa::gather";
+    StringAttr callee = rewriter.getStringAttr(funcName);
+
+    ArrayAttr args;
+    Type type = gatherOp.getType();
+    ArrayAttr templateArgs =
+        ArrayAttr::get(gatherOp.getContext(), {TypeAttr::get(type)});
+
+    rewriter.replaceOpWithNewOp<emitc::CallOp>(gatherOp, gatherOp.getType(),
+                                               callee, args, templateArgs,
+                                               adaptor.getOperands());
+
+    return success();
+  }
+};
+
 /// Convert a common, broadcastable `tosa` operation into an `emitc.call`
 /// operation.
 template <typename SrcOp, typename Adaptor = typename SrcOp::Adaptor>
@@ -805,6 +833,7 @@ void populateTosaToEmitcPatterns(MLIRContext *ctx,
   patterns.add<GenericConvOpConversion<tosa::DepthwiseConv2DOp>>(
       ctx, "emitc::tosa::depthwise_conv2d");
   patterns.add<FullyConnectedOpConversion>(ctx, "emitc::tosa::fully_connected");
+  patterns.add<GatherOpConversion>(ctx);
   patterns.add<MatMulOpConversion>(ctx);
   patterns.add<ReduceOpConversion<tosa::ArgMaxOp>>(ctx, "emitc::tosa::argmax",
                                                    false);
@@ -875,6 +904,7 @@ struct ConvertTosaToEmitCPass
     target.addIllegalOp<tosa::Conv2DOp,
                         tosa::DepthwiseConv2DOp,
                         tosa::FullyConnectedOp,
+                        tosa::GatherOp,
                         tosa::MatMulOp,
                         tosa::ArgMaxOp,
                         tosa::ReduceAllOp,
