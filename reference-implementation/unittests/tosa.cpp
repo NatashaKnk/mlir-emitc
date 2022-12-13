@@ -626,6 +626,18 @@ TEST(tosa, broadcastable_op) {
             t1_arg1_broadcasted); // Just make sure it compiles in this test
 }
 
+// Ternary elementwise ops
+TEST(tosa, select) {
+  using PredType = Tensor3D<bool, 1, 2, 3>;
+  using OperandType = Tensor3D<float, 1, 2, 3>;
+  PredType pred{true, false, true, false, false, true};
+  OperandType a{1000, 3, 15, 73, 6028, 1};
+  OperandType b{-1000, -3, -15, -73, -6028, -1};
+  OperandType expected_result{1000, -3, 15, -73, -6028, 1};
+  OperandType result = tosa::select<OperandType>(pred, a, b);
+  EXPECT_THAT(result, Pointwise(FloatNear(EPSILON), expected_result));
+}
+
 // Other ops
 TEST(tosa, depthwise_conv2d) {
   {

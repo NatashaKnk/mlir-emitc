@@ -415,8 +415,9 @@ private:
 };
 
 /// Convert `tosa.fully_connected` into an `emitc.call` operation.
-template <typename SrcOp, typename Adaptor = typename SrcOp::Adaptor>
-SmallVector<Value, 2>
+template <size_t operands, typename SrcOp,
+          typename Adaptor = typename SrcOp::Adaptor>
+SmallVector<Value, operands>
 createBroadcastOpIfNeeded(SrcOp &srcOp, Adaptor adaptor,
                           ConversionPatternRewriter &rewriter) {
   // TOSA allows implicit broadcasting, so we need to insert broadcast_in_dim
@@ -431,7 +432,7 @@ createBroadcastOpIfNeeded(SrcOp &srcOp, Adaptor adaptor,
   Value output = srcOp.getResult();
   auto opOutputShape = output.getType().cast<RankedTensorType>().getShape();
   auto opOutputRank = output.getType().cast<RankedTensorType>().getRank();
-  SmallVector<Value, 2> broadcastedOperands;
+  SmallVector<Value, operands> broadcastedOperands;
 
   for (auto operand : adaptor.getOperands()) {
     RankedTensorType operandTensor =
@@ -455,12 +456,16 @@ createBroadcastOpIfNeeded(SrcOp &srcOp, Adaptor adaptor,
           {rewriter.getIndexAttr(0),
            DenseIntElementsAttr::get(tensorType, broadcastIndices)});
 
+      auto newBroadcastType = RankedTensorType::get(
+          llvm::makeArrayRef(opOutputShape), operandTensor.getElementType());
+
       ArrayAttr templateBroadcastArgs =
-          rewriter.getArrayAttr({TypeAttr::get(srcOp.getType())});
+          rewriter.getArrayAttr({TypeAttr::get(newBroadcastType)});
 
       auto broadcastArg = rewriter.create<emitc::CallOp>(
-          srcOp->getLoc(), srcOp.getType(), broadcastCallee, broadcastArgs,
+          srcOp->getLoc(), newBroadcastType, broadcastCallee, broadcastArgs,
           templateBroadcastArgs, operand);
+
       // Replace the original operand with the result of the broadcast_in_dim
       // operation.
       broadcastedOperands.push_back(broadcastArg.getResult(0));
@@ -513,7 +518,7 @@ private:
     }
 
     SmallVector<Value, 2> broadcastedOperands =
-        createBroadcastOpIfNeeded(srcOp, adaptor, rewriter);
+        createBroadcastOpIfNeeded<2>(srcOp, adaptor, rewriter);
 
     rewriter.replaceOpWithNewOp<emitc::CallOp>(
         srcOp, srcOp.getType(), callee, args, templateArgs,
@@ -559,7 +564,7 @@ private:
     ArrayAttr templateArgs;
 
     SmallVector<Value, 2> broadcastedOperands =
-        createBroadcastOpIfNeeded(mulOp, adaptor, rewriter);
+        createBroadcastOpIfNeeded<2>(mulOp, adaptor, rewriter);
 
     rewriter.replaceOpWithNewOp<emitc::CallOp>(
         mulOp, mulOp.getType(), callee, args, templateArgs,
@@ -599,12 +604,44 @@ private:
     ArrayAttr templateArgs;
 
     SmallVector<Value, 2> broadcastedOperands =
-        createBroadcastOpIfNeeded(arithmeticRightShiftOp, adaptor, rewriter);
+        createBroadcastOpIfNeeded<2>(arithmeticRightShiftOp, adaptor, rewriter);
 
     rewriter.replaceOpWithNewOp<emitc::CallOp>(
         arithmeticRightShiftOp, arithmeticRightShiftOp.getType(), callee, args,
         templateArgs,
         ValueRange({broadcastedOperands[0], broadcastedOperands[1]}));
+
+    return success();
+  }
+};
+
+/// Convert `tosa.select` into an `emitc.call` operation.
+class SelectOpConversion : public OpConversionPattern<tosa::SelectOp> {
+  using OpConversionPattern<tosa::SelectOp>::OpConversionPattern;
+
+public:
+  SelectOpConversion(MLIRContext *ctx, StringRef funcName,
+                     bool explicitResultType = false,
+                     bool explicitOperandTypes = true)
+      : OpConversionPattern<tosa::SelectOp>(ctx) {}
+
+private:
+  LogicalResult
+  matchAndRewrite(tosa::SelectOp selectOp, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    StringRef funcName = "emitc::tosa::select";
+    StringAttr callee = rewriter.getStringAttr(funcName);
+
+    ArrayAttr args;
+    ArrayAttr templateArgs;
+
+    SmallVector<Value, 3> broadcastedOperands =
+        createBroadcastOpIfNeeded<3>(selectOp, adaptor, rewriter);
+
+    rewriter.replaceOpWithNewOp<emitc::CallOp>(
+        selectOp, selectOp.getType(), callee, args, templateArgs,
+        ValueRange({broadcastedOperands[0], broadcastedOperands[1],
+                    broadcastedOperands[2]}));
 
     return success();
   }
@@ -799,6 +836,9 @@ void populateTosaToEmitcPatterns(MLIRContext *ctx,
                                                            "emitc::tosa::sub");
   patterns.add<CallOpConversion<tosa::TableOp>>(ctx, "emitc::tosa::table");
 
+  // Insert patterns for TOSA ternary elementwise ops.
+  patterns.add<SelectOpConversion>(ctx);
+
   // Insert patterns for other TOSA ops.
   patterns.add<GenericConvOpConversion<tosa::Conv2DOp>>(ctx,
                                                         "emitc::tosa::conv2d");
@@ -870,6 +910,9 @@ struct ConvertTosaToEmitCPass
                         tosa::PowOp,
                         tosa::SubOp,
                         tosa::TableOp>();
+
+    // Ternary elementwise ops.
+    target.addIllegalOp<tosa::SelectOp>();
 
     // Other ops.
     target.addIllegalOp<tosa::Conv2DOp,
