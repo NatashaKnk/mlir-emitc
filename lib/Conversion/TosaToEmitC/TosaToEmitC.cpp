@@ -414,7 +414,7 @@ private:
   }
 };
 
-/// Convert `tosa.fully_connected` into an `emitc.call` operation.
+/// Create a broadcast of one or more of the operands if needed.
 template <size_t operands, typename SrcOp,
           typename Adaptor = typename SrcOp::Adaptor>
 SmallVector<Value, operands>
